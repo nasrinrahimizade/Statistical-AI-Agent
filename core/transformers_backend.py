@@ -1,58 +1,137 @@
+import os
 import json
 import re
-from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 class Chatbot:
-    def __init__(self, model_dir: str, system_prompt: str = None):
-        
+    def __init__(self, model_dir: str, prompt_choice: str = None, history_limit: int = 8):
+        # — Load system prompts & memory‐extraction patterns from JSON (or fallback) —
+        base_dir = os.path.dirname(__file__)
+        prompts_path = os.path.join(base_dir, "prompt.json")
+        try:
+            with open(prompts_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception:
+            config = {
+                "system_prompts": {
+                    "default": (
+                        "You are Peak, a friendly AI assistant. "
+                        "Keep answers concise, conversational, and vary your phrasing. "
+                        "Don’t repeat yourself or re-ask questions once answered."
+                    )
+                },
+                "default_choice": "default",
+                "memory_patterns": [
+                    # raw strings to avoid escape‐sequence warnings
+                    r"my (?P<field>\w+) is (?P<value>[\w ]+)",
+                    r"i am (?P<value>[A-Za-z]+)",
+                    r"i live in (?P<value>[A-Za-z ]+)",
+                    r"my favorite (?P<field>[A-Za-z ]+) is (?P<value>[A-Za-z ]+)"
+                ]
+            }
+
+        # Select persona prompt
+        choice = prompt_choice or config.get("default_choice", "default")
+        self.system_prompt = config.get("system_prompts", {}).get(choice, "")
+
+        # Compile dynamic memory patterns
+        self.memory_patterns = [re.compile(p, re.IGNORECASE) for p in config.get("memory_patterns", [])]
+        self.memory = {}  # dynamic key→value store for extracted facts
+
+        # Load tokenizer & model
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False)
         self.model = AutoModelForCausalLM.from_pretrained(model_dir).to(
             torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
-        # load your tuned generation_config.json
-        self.gen_config = GenerationConfig.from_pretrained(model_dir)
         self.device = self.model.device
 
-        # Memory
-        self.system_prompt = system_prompt or (
-           "You are Peak: the world’s coolest AI—insightful, \
-            quick-witted, and always ready with a light-hearted joke. Keep answers sharp, concise, \
-            and sprinkle in a bit of humor. No extra labels",
-        )
-        self.history = []  # list of ("User", text) and ("AI", text)
+        # Sampling & repetition settings
+        self.do_sample = True
+        self.temperature = 0.8
+        self.top_k = 50
+        self.top_p = 0.9
+        self.repetition_penalty = 1.2
+
+        # Conversation state
+        self.history = []           # list of (AI, User)
+        self.history_limit = history_limit
+
+    def _extract_memory(self, text: str):
+        """Scan user input for any memory patterns and store them."""
+        for pat in self.memory_patterns:
+            m = pat.search(text)
+            if not m:
+                continue
+            gd = m.groupdict()
+            if "field" in gd and gd["field"]:
+                field = gd["field"].lower()
+            else:
+                # if the pattern was "i am ...", treat as 'name'
+                if pat.pattern.lower().startswith("i am"):
+                    field = "name"
+                else:
+                    field = "info"
+            value = gd.get("value", m.group(0)).strip()
+            key = re.sub(r"\s+", "_", field)
+            self.memory[key] = value
+
+    def _summarize(self, entries):
+        """Create a brief summary of earlier user turns."""
+        texts = [txt for spk, txt in entries if spk == "User"]
+        return "Previous topics: " + ", ".join(texts[-3:])
+
+    def _prune_history(self):
+        """Keep only the most recent turns, plus one summary entry if needed."""
+        max_entries = self.history_limit * 2
+        if len(self.history) > max_entries:
+            old = self.history[:-max_entries]
+            summary = self._summarize(old)
+            # tag the summary as its own speaker to avoid confusion
+            self.history = [("Summary", summary)] + self.history[-max_entries:]
 
     def _build_prompt(self, user_input: str) -> str:
+        # 1) Extract any new memory from this turn
+        self._extract_memory(user_input)
+
+        # 2) Append the user's message
         self.history.append(("User", user_input))
-        lines = [f"System: {self.system_prompt}"] + [
-            f"{speaker}: {txt}" for speaker, txt in self.history
-        ] + ["AI:"]
+        self._prune_history()
+
+        # 3) Assemble the system prompt + injected memory + history
+        lines = [f"System: {self.system_prompt}"]
+        for k, v in self.memory.items():
+            lines.append(f"(Note: user {k} is {v}.)")
+        for speaker, txt in self.history:
+            lines.append(f"{speaker}: {txt}")
+        lines.append("AI:")
         return "\n".join(lines)
 
-    def generate(self, user_input: str, max_new_tokens: int = 365) -> str:
+    def generate(self, user_input: str, max_new_tokens: int = 256) -> str:
         prompt = self._build_prompt(user_input)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
         outputs = self.model.generate(
             **inputs,
-            generation_config=self.gen_config,
             max_new_tokens=max_new_tokens,
+            do_sample=self.do_sample,
+            temperature=self.temperature,
+            top_k=self.top_k,
+            top_p=self.top_p,
+            repetition_penalty=self.repetition_penalty,
+            eos_token_id=self.tokenizer.eos_token_id,
         )
 
-        full = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        # strip off the echoed prompt
-        reply = full[len(prompt):].lstrip()
+        decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # strip out the prompt echo
+        reply = decoded[len(prompt):].strip()
+        # stop at any new speaker label
+        reply = re.split(r"(?i)\b(?:User|System|Developer|AI):", reply)[0].strip()
 
-        # remove any subsequent speaker labels (User:, System:, Developer:, You:, etc.)
-        # case-insensitive
-        reply = re.split(
-            r"(?i)\b(?:User|System|Developer):",
-            reply,
-        )[0].strip()
-
-        # record and return
         self.history.append(("AI", reply))
         return reply
 
     def reset_memory(self):
+        """Clear the conversation history and all stored facts."""
         self.history.clear()
+        self.memory.clear()
