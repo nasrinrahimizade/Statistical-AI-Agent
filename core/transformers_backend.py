@@ -2,10 +2,10 @@ import os
 import json
 import re
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer,BitsAndBytesConfig
 
 class Chatbot:
-    def __init__(self, model_dir: str, prompt_choice: str = None, history_limit: int = 8):
+    def __init__(self, model_dir: str, prompt_choice: str = None, history_limit: int = 7):
         # — Load system prompts & memory‐extraction patterns from JSON (or fallback) —
         base_dir = os.path.dirname(__file__)
         prompts_path = os.path.join(base_dir, "prompt.json")
@@ -16,9 +16,10 @@ class Chatbot:
             config = {
                 "system_prompts": {
                     "default": (
-                        "You are Peak, a friendly AI assistant. "
-                        "Keep answers concise, conversational, and vary your phrasing. "
+                        "You are Peak, an Italian friendly AI assistant. "
+                        "youre good at analyzing data and providing insights."
                         "Don’t repeat yourself or re-ask questions once answered."
+                        "youre good at speaking italian and english."
                     )
                 },
                 "default_choice": "default",
@@ -39,15 +40,21 @@ class Chatbot:
         self.memory_patterns = [re.compile(p, re.IGNORECASE) for p in config.get("memory_patterns", [])]
         self.memory = {}  # dynamic key→value store for extracted facts
 
+        # Load model in 4bit for faster inference
+        # bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+        
         # Load tokenizer & model
-        self.tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False)
-        self.model = AutoModelForCausalLM.from_pretrained(model_dir).to(
-            torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=True)
+        self.model = AutoModelForCausalLM.from_pretrained(
+        model_dir,
+        torch_dtype=torch.float16,
+        # quantization_config=bnb_config
+        ).to("cuda")
+
         self.device = self.model.device
 
         # Sampling & repetition settings
-        self.do_sample = True
+        self.do_sample = False #if false, model runs faster if true, model runs slower but more creative
         self.temperature = 0.8
         self.top_k = 50
         self.top_p = 0.9
