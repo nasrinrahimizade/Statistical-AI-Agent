@@ -35,11 +35,11 @@ class Chatbot:
         self.device = self.model.device
 
         # Sampling & repetition settings
-        self.do_sample = False #if false, model runs faster if true, model runs slower but more creative
-        self.temperature = 0.8
-        self.top_k = 50
-        self.top_p = 0.9
-        self.repetition_penalty = 1.2
+        self.do_sample = True  # Enable sampling for more diverse responses
+        self.temperature = 0.7  # Slightly lower for more focused responses
+        self.top_k = 40
+        self.top_p = 0.85
+        self.repetition_penalty = 1.3  # Increased to prevent repetition
 
         # Conversation state
         self.history = []           # list of (AI, User)
@@ -108,16 +108,82 @@ class Chatbot:
             top_p=self.top_p,
             repetition_penalty=self.repetition_penalty,
             eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.eos_token_id,
+            no_repeat_ngram_size=3,  # Prevent repetition of 3-grams
         )
 
         decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         # strip out the prompt echo
         reply = decoded[len(prompt):].strip()
-        # stop at any new speaker label
+        
+        # Enhanced response cleaning
+        reply = self._clean_response(reply)
+        
+        # Stop at any new speaker label
         reply = re.split(r"(?i)\b(?:User|System|Developer|AI):", reply)[0].strip()
 
         self.history.append(("AI", reply))
         return reply
+
+    def _clean_response(self, reply: str) -> str:
+        """Clean and improve the generated response to prevent repetition."""
+        if not reply:
+            return reply
+            
+        # Remove excessive whitespace
+        reply = re.sub(r'\s+', ' ', reply).strip()
+        
+        # Remove repetitive patterns (3+ consecutive identical sentences)
+        sentences = re.split(r'[.!?]+', reply)
+        cleaned_sentences = []
+        prev_sentence = None
+        repeat_count = 0
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # Check for exact repetition
+            if sentence == prev_sentence:
+                repeat_count += 1
+                if repeat_count >= 2:  # Allow max 2 repetitions
+                    continue
+            else:
+                repeat_count = 0
+                
+            # Check for similar sentences (fuzzy matching)
+            if prev_sentence and self._similar_sentences(sentence, prev_sentence):
+                repeat_count += 1
+                if repeat_count >= 2:
+                    continue
+            else:
+                repeat_count = 0
+                
+            cleaned_sentences.append(sentence)
+            prev_sentence = sentence
+        
+        # Reconstruct the response
+        cleaned_reply = '. '.join(cleaned_sentences)
+        if cleaned_reply and not cleaned_reply.endswith(('.', '!', '?')):
+            cleaned_reply += '.'
+            
+        return cleaned_reply
+    
+    def _similar_sentences(self, sent1: str, sent2: str, threshold: float = 0.8) -> bool:
+        """Check if two sentences are very similar (to detect repetition)."""
+        # Simple similarity check based on word overlap
+        words1 = set(re.findall(r'\b\w+\b', sent1.lower()))
+        words2 = set(re.findall(r'\b\w+\b', sent2.lower()))
+        
+        if not words1 or not words2:
+            return False
+            
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        similarity = len(intersection) / len(union)
+        return similarity > threshold
 
     def reset_memory(self):
         """Clear the conversation history and all stored facts."""
