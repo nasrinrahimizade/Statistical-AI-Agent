@@ -9,28 +9,9 @@ class Chatbot:
         # — Load system prompts & memory‐extraction patterns from JSON (or fallback) —
         base_dir = os.path.dirname(__file__)
         prompts_path = os.path.join(base_dir, "prompt.json")
-        try:
-            with open(prompts_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-        except Exception:
-            config = {
-                "system_prompts": {
-                    "default": (
-                        "You are Peak, an Italian friendly AI assistant. "
-                        "youre good at analyzing data and providing insights."
-                        "Don’t repeat yourself or re-ask questions once answered."
-                        "youre good at speaking italian and english."
-                    )
-                },
-                "default_choice": "default",
-                "memory_patterns": [
-                    # raw strings to avoid escape‐sequence warnings
-                    r"my (?P<field>\w+) is (?P<value>[\w ]+)",
-                    r"i am (?P<value>[A-Za-z]+)",
-                    r"i live in (?P<value>[A-Za-z ]+)",
-                    r"my favorite (?P<field>[A-Za-z ]+) is (?P<value>[A-Za-z ]+)"
-                ]
-            }
+        with open(prompts_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
 
         # Select persona prompt
         choice = prompt_choice or config.get("default_choice", "default")

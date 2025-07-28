@@ -21,7 +21,6 @@ class MainWindow(QMainWindow):
         self._createToolBar()
         self._createStatusBar()
         self._createCentralWidget()
-        self._createDockWidgets()
 
     def _createMenuBar(self):
         menuBar = self.menuBar()
@@ -37,8 +36,37 @@ class MainWindow(QMainWindow):
 
     def _createToolBar(self):
         toolBar = QToolBar("Main Toolbar")
+        toolBar.setMovable(False)  # Prevent toolbar from being moved
+        toolBar.setFloatable(False)  # Prevent toolbar from being floated
         self.addToolBar(Qt.TopToolBarArea, toolBar)
-        # TODO: add toolbar actions for stats, model, plots, chat
+        
+        # Add toolbar actions
+        openAction = QAction("Open Dataset", self)
+        openAction.triggered.connect(self.openDataset)
+        toolBar.addAction(openAction)
+        
+        toolBar.addSeparator()
+        
+        # Add view switching actions
+        dataAction = QAction("Data View", self)
+        dataAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
+        toolBar.addAction(dataAction)
+        
+        statsAction = QAction("Statistics", self)
+        statsAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
+        toolBar.addAction(statsAction)
+        
+        modelAction = QAction("Model", self)
+        modelAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        toolBar.addAction(modelAction)
+        
+        plotAction = QAction("Plots", self)
+        plotAction.triggered.connect(lambda: self.stack.setCurrentIndex(3))
+        toolBar.addAction(plotAction)
+        
+        chatAction = QAction("Chat", self)
+        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(4))
+        toolBar.addAction(chatAction)
 
     def _createStatusBar(self):
         statusBar = QStatusBar()
@@ -61,23 +89,11 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.chatView)
 
         self.setCentralWidget(self.stack)
+        
+        # Set chat view as the default first screen
+        self.stack.setCurrentIndex(4)  # Chat view is at index 4
 
-    def _createDockWidgets(self):
-        dock = QDockWidget("Views", self)
-        dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
-        listWidget = QListWidget()
-        # Increase font size for better visibility
-        font = listWidget.font()
-        font.setPointSize(12)
-        listWidget.setFont(font)
-
-        views = ["Data View", "Statistics", "Model", "Plots", "Chat"]
-        listWidget.addItems(views)
-        listWidget.currentRowChanged.connect(self.stack.setCurrentIndex)
-
-        dock.setWidget(listWidget)
-        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
 
     def openDataset(self):
         fileName, _ = QFileDialog.getOpenFileName(
