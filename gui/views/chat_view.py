@@ -3,10 +3,12 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPushButton, QLab
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtCore import Qt, QEvent
 from core.transformers_backend import Chatbot
+from core.ml_plotter import prepare_example_plot
 
 class ChatView(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, plot_view=None):
         super().__init__(parent)
+        self.plot_view = plot_view  # Store reference to plot view
         layout = QVBoxLayout(self)
         layout.setSpacing(14)
 
@@ -75,3 +77,47 @@ class ChatView(QWidget):
         # offload compute to thread
         reply = await asyncio.to_thread(self.chatbot.generate, text)
         self._append_message("AI", reply, Qt.AlignLeft)
+        
+        # Check for plot triggers in AI response
+        self._check_plot_triggers(reply)
+
+    def _check_plot_triggers(self, ai_response: str):
+        """
+        Check AI response for keywords that should trigger plot display
+        """
+        response_lower = ai_response.lower()
+        
+        # Check for sales plot trigger
+        if "show sales plot" in response_lower or "sales plot" in response_lower:
+            self.trigger_plot_display()
+
+    def trigger_plot_display(self):
+        """
+        Generate plot and display it in the plot view
+        """
+        try:
+            # Generate the plot from ml_plotter
+            fig = prepare_example_plot()
+            
+            # Display the plot if plot_view is available
+            if self.plot_view:
+                self.plot_view.show_plot(fig)
+                self._append_message("System", "Sales plot displayed in Plot View", Qt.AlignLeft)
+            else:
+                # Fallback to main window method if plot_view not passed
+                main_window = self.window()
+                if hasattr(main_window, 'plotView'):
+                    main_window.plotView.show_plot(fig)
+                    main_window.stack.setCurrentIndex(3)  # Plot view index
+                    self._append_message("System", "Sales plot displayed in Plot View", Qt.AlignLeft)
+                else:
+                    self._append_message("System", "Error: Plot view not available", Qt.AlignLeft)
+                
+        except Exception as e:
+            self._append_message("System", f"Error displaying plot: {str(e)}", Qt.AlignLeft)
+
+    def show_sales_plot(self):
+        """
+        Alias for trigger_plot_display for backward compatibility
+        """
+        self.trigger_plot_display()

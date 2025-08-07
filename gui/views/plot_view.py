@@ -1,26 +1,28 @@
 # gui/views/plot_view.py
 
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtWidgets import QWidget, QVBoxLayout
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
-from matplotlib.figure import Figure
 
 class PlotView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
+        self.canvas = None
 
-        # Set up a Matplotlib canvas
-        self.figure = Figure()
-        self.canvas = Canvas(self.figure)
-        layout.addWidget(self.canvas)
+    def show_plot(self, fig):
+        if self.canvas:
+            self.layout.removeWidget(self.canvas)
+            self.canvas.deleteLater()
+
+        self.canvas = FigureCanvas(fig)
+        self.layout.addWidget(self.canvas)
+        self.canvas.draw()
 
     def set_dataframe(self, df):
         """
         df is a pandas.DataFrame.
         Here you can plot things like time series or histograms.
         """
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-        # Example stub: empty plot with title
-        ax.set_title("Plots will appear here")
-        self.canvas.draw()
+        # This method can be used for other plotting needs
+        pass

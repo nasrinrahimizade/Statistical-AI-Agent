@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         self.statsView = StatsView()
         self.modelView = ModelView()
         self.plotView = PlotView()
-        self.chatView = ChatView()
+        self.chatView = ChatView(plot_view=self.plotView)
 
         # add to stack
         self.stack.addWidget(self.dataView)
