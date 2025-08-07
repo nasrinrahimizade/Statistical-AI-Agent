@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QStatusBar, QFileDialog,
-    QDockWidget, QListWidget, QStackedWidget, QToolBar
+    QStackedWidget, QToolBar
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
