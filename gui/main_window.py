@@ -4,10 +4,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from gui.views.data_view import DataView
-from gui.views.stats_view import StatsView
 from gui.views.plot_view import PlotView
 from gui.views.chat_view import ChatView
+from gui.views.help_view import HelpView
 from core.data_loader import load_dataset
 
 class MainWindow(QMainWindow):
@@ -29,15 +28,11 @@ class MainWindow(QMainWindow):
         openAction.triggered.connect(self.openDataset)
         fileMenu.addAction(openAction)
 
-        exitAction = QAction("Exit", self)
-        exitAction.triggered.connect(self.close)
-        fileMenu.addAction(exitAction)
-
         # Help menu
         helpMenu = menuBar.addMenu("Help")
-        howItWorksAction = QAction("How the program works", self)
-        howItWorksAction.triggered.connect(self.showHelpDialog)
-        helpMenu.addAction(howItWorksAction)
+        openHelpAction = QAction("Open Help", self)
+        openHelpAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        helpMenu.addAction(openHelpAction)
 
     def _createToolBar(self):
         toolBar = QToolBar("Main Toolbar")
@@ -53,21 +48,17 @@ class MainWindow(QMainWindow):
         toolBar.addSeparator()
         
         # Add view switching actions
-        dataAction = QAction("Data View", self)
-        dataAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
-        toolBar.addAction(dataAction)
-        
-        statsAction = QAction("Statistics", self)
-        statsAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
-        toolBar.addAction(statsAction)
-        
         plotAction = QAction("Plots", self)
-        plotAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        plotAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
         toolBar.addAction(plotAction)
         
         chatAction = QAction("Chat", self)
-        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(3))
+        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
         toolBar.addAction(chatAction)
+
+        helpAction = QAction("Help", self)
+        helpAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        toolBar.addAction(helpAction)
 
     def _createStatusBar(self):
         statusBar = QStatusBar()
@@ -76,21 +67,19 @@ class MainWindow(QMainWindow):
     def _createCentralWidget(self):
         self.stack = QStackedWidget()
         # instantiate views
-        self.dataView = DataView()
-        self.statsView = StatsView()
         self.plotView = PlotView()
         self.chatView = ChatView(plot_view=self.plotView)
+        self.helpView = HelpView()
 
         # add to stack
-        self.stack.addWidget(self.dataView)
-        self.stack.addWidget(self.statsView)
         self.stack.addWidget(self.plotView)
         self.stack.addWidget(self.chatView)
+        self.stack.addWidget(self.helpView)
 
         self.setCentralWidget(self.stack)
         
         # Set chat view as the default first screen
-        self.stack.setCurrentIndex(3)  # Chat view is at index 3
+        self.stack.setCurrentIndex(1)  # Chat view is at index 1
 
 
 
@@ -101,23 +90,9 @@ class MainWindow(QMainWindow):
         if fileName:
             df = load_dataset(fileName)
             # distribute to views
-            self.dataView.set_dataframe(df)
-            self.statsView.set_dataframe(df)
             self.plotView.set_dataframe(df)
             self.chatView.set_dataframe(df)
 
     def showHelpDialog(self):
-        text = (
-            "Statistical AI Agent — How it works\n\n"
-            "1) Load data: Use File → Open Dataset to select a CSV.\n"
-            "2) Explore:\n"
-            "   - Data View: browse the raw table.\n"
-            "   - Statistics: see summary metrics.\n"
-            "   - Plots: view generated visualizations.\n"
-            "   - Chat: ask the AI to analyze data or create plots.\n"
-            "3) Ask in natural language (e.g., ‘show correlation matrix’, ‘plot temperature histogram’).\n"
-            "4) Results appear in the appropriate view (plots in Plots, stats in Statistics).\n\n"
-            "Under the hood: PySide6 GUI, a transformers-based AI model, and a plotting engine integrate "
-            "to interpret requests, analyze your dataset, and render visualizations."
-        )
-        QMessageBox.information(self, "How the program works", text)
+        # Kept for backward compatibility; open full Help view instead
+        self.stack.setCurrentIndex(2)

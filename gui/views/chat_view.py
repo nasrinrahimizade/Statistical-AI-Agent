@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPushButton, QLab
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtCore import Qt, QEvent
 from datetime import datetime
+import re
 from core.transformers_backend import Chatbot
 from core.ml_plotter import (get_plotting_engine, prepare_example_plot, prepare_boxplot_accelerometer,
                             prepare_temperature_histogram, prepare_correlation_matrix,
@@ -34,6 +35,34 @@ class ChatView(QWidget):
             'scatter': prepare_scatter_plot_features,
             'default': prepare_example_plot
         }
+
+        # Strict allowlist of plot-triggering phrases (lowercase, punctuation-insensitive)
+        self.allowed_plot_requests_specific = {
+            # Basic plot requests routed to specific plot functions
+            'show me a boxplot': 'boxplot',
+            'create a histogram': 'histogram',
+            'display correlation matrix': 'correlation',
+            'generate time series analysis': 'time series',
+            'show frequency domain plot': 'frequency',
+            'plot scatter relationships': 'scatter',
+        }
+
+        # Requests that should be handled by the natural language plotting engine
+        self.allowed_plot_requests_engine = set([
+            # Sensor-specific
+            'show me accelerometer data',
+            'analyze temperature sensors',
+            'compare pressure readings',
+            'display humidity distribution',
+            # Advanced
+            'show me the most discriminative features',
+            'create a comparison between ok and ko conditions',
+            'generate a feature relationship matrix',
+        ])
+
+    def set_dataframe(self, df):
+        # Optional: if ChatView needs the dataframe, store it for context or future use
+        self._dataframe = df
 
     def setup_ui(self):
         """Setup the chat interface UI"""
@@ -137,48 +166,72 @@ class ChatView(QWidget):
         """Check AI response for keywords that should trigger plot display"""
         response_lower = ai_response.lower()
         user_lower = user_message.lower()
+
+        # Normalize user text for strict allowlist matching
+        normalized_user = self._normalize_text(user_lower)
         
-        # Check for general plot trigger
-        if "show sales plot" in response_lower:
-            self.trigger_plot_display()
-            return
+        # No general triggers; only explicit allowlisted phrases will trigger plots
         
-        # Check for natural language plot requests
-        plot_request = self._detect_natural_plot_request(user_lower, response_lower)
-        if plot_request:
-            self.trigger_natural_plot_request(plot_request)
-            return
-        
-        # Check for specific plot types (backward compatibility)
-        plot_type = self._detect_plot_type(response_lower)
-        if plot_type:
+        # Strict allowlist: specific plot functions
+        if normalized_user in self.allowed_plot_requests_specific:
+            plot_type = self.allowed_plot_requests_specific[normalized_user]
             self.trigger_specific_plot(plot_type)
+            return
+
+        # Strict allowlist: engine-handled requests
+        if normalized_user in self.allowed_plot_requests_engine:
+            self.trigger_natural_plot_request(user_message)
+            return
 
     def _detect_natural_plot_request(self, user_message: str, ai_response: str) -> str:
         """Detect natural language plot requests"""
-        # Common plot request patterns
-        plot_keywords = [
-            'show me', 'display', 'plot', 'visualize', 'create', 'generate',
+        text = user_message.lower()
+
+        # Action verbs indicating intent to produce something
+        action_keywords = ['show', 'display', 'plot', 'visualize', 'create', 'generate', 'draw', 'render']
+        # Plot-related nouns/types
+        noun_keywords = [
+            'plot', 'chart', 'graph', 'visualization',
             'boxplot', 'histogram', 'correlation', 'scatter', 'time series',
-            'frequency', 'fft', 'distribution', 'comparison'
+            'frequency', 'fft', 'spectrum', 'distribution', 'comparison', 'matrix'
         ]
-        
-        # Check if user message contains plot keywords
-        for keyword in plot_keywords:
-            if keyword in user_message.lower():
-                return user_message
-        
-        # Check if AI response suggests showing a plot
-        if any(word in ai_response.lower() for word in ['plot', 'visualization', 'chart', 'graph']):
+
+        # Word-boundary match for single-word actions to avoid matching 'created' for 'create'
+        def has_action_intent(t: str) -> bool:
+            for word in action_keywords:
+                if ' ' in word:  # simple substring for multi-word phrases
+                    if word in t:
+                        return True
+                else:
+                    if re.search(rf"\\b{re.escape(word)}\\b", t):
+                        return True
+            return False
+
+        def has_plot_noun(t: str) -> bool:
+            for word in noun_keywords:
+                if word in t:
+                    return True
+            return False
+
+        if has_action_intent(text) and has_plot_noun(text):
             return user_message
-        
+
         return None
 
     def _detect_plot_type(self, response_lower: str) -> str:
-        """Detect specific plot type from AI response (backward compatibility)"""
+        """Detect specific plot type from user message (requires plot intent)"""
+        # Require explicit plot intent to avoid accidental triggers on casual mentions
+        intent_words = ['show', 'display', 'plot', 'visualize', 'create', 'generate', 'draw', 'render', 'chart', 'graph', 'visualization']
+        has_intent = any(
+            (re.search(rf"\\b{re.escape(w)}\\b", response_lower) if ' ' not in w else w in response_lower)
+            for w in intent_words
+        )
+        if not has_intent:
+            return None
+
         if any(word in response_lower for word in ['boxplot', 'accelerometer', 'acceleration']):
             return 'boxplot'
-        elif any(word in response_lower for word in ['histogram', 'temperature', 'distribution']):
+        elif any(word in response_lower for word in ['histogram', 'distribution']):
             return 'histogram'
         elif any(word in response_lower for word in ['correlation', 'matrix', 'relationships']):
             return 'correlation'
@@ -189,6 +242,14 @@ class ChatView(QWidget):
         elif any(word in response_lower for word in ['scatter', 'features', 'relationships']):
             return 'scatter'
         return None
+
+    def _normalize_text(self, text: str) -> str:
+        """Normalize text by removing punctuation and collapsing whitespace for robust matching."""
+        # Remove non-word, non-space characters (Python re doesn't support Unicode \p classes)
+        text = re.sub(r"[^\w\s]", " ", text)
+        # Collapse multiple spaces and trim
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
 
     def trigger_plot_display(self):
         """
@@ -218,13 +279,13 @@ class ChatView(QWidget):
             
             if self.plot_view:
                 self.plot_view.show_plot(fig)
-                self._append_message("System", f"Generated plot based on your request: '{request}'", Qt.AlignLeft)
+                self._append_message("System", f"Generated plot based on your request", Qt.AlignLeft)
             else:
                 main_window = self.window()
                 if hasattr(main_window, 'plotView'):
                     main_window.plotView.show_plot(fig)
                     main_window.stack.setCurrentIndex(3)
-                    self._append_message("System", f"Generated plot based on your request: '{request}'", Qt.AlignLeft)
+                    self._append_message("System", f"Generated plot based on your ", Qt.AlignLeft)
                 else:
                     self._append_message("System", "Error: Plot view not available", Qt.AlignLeft)
         except Exception as e:
