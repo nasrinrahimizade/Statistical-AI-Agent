@@ -1,14 +1,12 @@
 from PySide6.QtWidgets import (
     QMainWindow, QStatusBar, QFileDialog,
-    QStackedWidget, QToolBar
+    QStackedWidget, QToolBar, QMessageBox
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from gui.views.data_view import DataView
-from gui.views.stats_view import StatsView
-from gui.views.model_view import ModelView
 from gui.views.plot_view import PlotView
 from gui.views.chat_view import ChatView
+from gui.views.help_view import HelpView
 from core.data_loader import load_dataset
 
 class MainWindow(QMainWindow):
@@ -30,9 +28,11 @@ class MainWindow(QMainWindow):
         openAction.triggered.connect(self.openDataset)
         fileMenu.addAction(openAction)
 
-        exitAction = QAction("Exit", self)
-        exitAction.triggered.connect(self.close)
-        fileMenu.addAction(exitAction)
+        # Help menu
+        helpMenu = menuBar.addMenu("Help")
+        openHelpAction = QAction("Open Help", self)
+        openHelpAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        helpMenu.addAction(openHelpAction)
 
     def _createToolBar(self):
         toolBar = QToolBar("Main Toolbar")
@@ -48,25 +48,17 @@ class MainWindow(QMainWindow):
         toolBar.addSeparator()
         
         # Add view switching actions
-        dataAction = QAction("Data View", self)
-        dataAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
-        toolBar.addAction(dataAction)
-        
-        statsAction = QAction("Statistics", self)
-        statsAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
-        toolBar.addAction(statsAction)
-        
-        modelAction = QAction("Model", self)
-        modelAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
-        toolBar.addAction(modelAction)
-        
         plotAction = QAction("Plots", self)
-        plotAction.triggered.connect(lambda: self.stack.setCurrentIndex(3))
+        plotAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
         toolBar.addAction(plotAction)
         
         chatAction = QAction("Chat", self)
-        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(4))
+        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
         toolBar.addAction(chatAction)
+
+        helpAction = QAction("Help", self)
+        helpAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        toolBar.addAction(helpAction)
 
     def _createStatusBar(self):
         statusBar = QStatusBar()
@@ -75,23 +67,19 @@ class MainWindow(QMainWindow):
     def _createCentralWidget(self):
         self.stack = QStackedWidget()
         # instantiate views
-        self.dataView = DataView()
-        self.statsView = StatsView()
-        self.modelView = ModelView()
         self.plotView = PlotView()
         self.chatView = ChatView(plot_view=self.plotView)
+        self.helpView = HelpView()
 
         # add to stack
-        self.stack.addWidget(self.dataView)
-        self.stack.addWidget(self.statsView)
-        self.stack.addWidget(self.modelView)
         self.stack.addWidget(self.plotView)
         self.stack.addWidget(self.chatView)
+        self.stack.addWidget(self.helpView)
 
         self.setCentralWidget(self.stack)
         
         # Set chat view as the default first screen
-        self.stack.setCurrentIndex(4)  # Chat view is at index 4
+        self.stack.setCurrentIndex(1)  # Chat view is at index 1
 
 
 
@@ -102,8 +90,9 @@ class MainWindow(QMainWindow):
         if fileName:
             df = load_dataset(fileName)
             # distribute to views
-            self.dataView.set_dataframe(df)
-            self.statsView.set_dataframe(df)
-            self.modelView.set_dataframe(df)
             self.plotView.set_dataframe(df)
             self.chatView.set_dataframe(df)
+
+    def showHelpDialog(self):
+        # Kept for backward compatibility; open full Help view instead
+        self.stack.setCurrentIndex(2)
