@@ -13,10 +13,11 @@ from core.ml_plotter import get_plotting_engine, prepare_example_plot, prepare_b
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 class ChatView(QWidget):
-    def __init__(self, parent=None, plot_view=None):
+    def __init__(self, parent=None, plot_view=None, open_dataset_callback=None):
         super().__init__(parent)
         self.plot_view = plot_view  # Store reference to plot view
-        
+        self.open_dataset_callback = open_dataset_callback
+
         # Initialize plotting engine
         self.plotting_engine = get_plotting_engine()
         
@@ -92,23 +93,31 @@ class ChatView(QWidget):
         
         # Input area
         input_layout = QHBoxLayout()
-        
+
+        # Add dataset button on the left
+        if self.open_dataset_callback:
+            self.dataset_button = QPushButton("+")
+            self.dataset_button.setToolTip("Open Dataset")
+            self.dataset_button.setMaximumWidth(40)
+            self.dataset_button.clicked.connect(self.open_dataset_callback)
+            input_layout.addWidget(self.dataset_button)
+
         self.input_field = QTextEdit()
         self.input_field.setMaximumHeight(100)
-        
+
         # Set input font to match chat message font size
         input_font = QFont()
         input_font.setPointSize(12)
         self.input_field.setFont(input_font)
-        
+
         self.input_field.setPlaceholderText("Type your message here...")
         input_layout.addWidget(self.input_field)
-        
+
         # Send button
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self._send_message)
         input_layout.addWidget(self.send_button)
-        
+
         self.layout.addLayout(input_layout)
         
         # Install event filter for Enter key handling

@@ -39,12 +39,7 @@ class MainWindow(QMainWindow):
         toolBar.setFloatable(False)  # Prevent toolbar from being floated
         self.addToolBar(Qt.TopToolBarArea, toolBar)
         
-        # Add toolbar actions
-        openAction = QAction("Open Dataset", self)
-        openAction.triggered.connect(self.openDataset)
-        toolBar.addAction(openAction)
         
-        toolBar.addSeparator()
         
         # Add view switching actions
         chatAction = QAction("Chat + Plots", self)
@@ -61,8 +56,8 @@ class MainWindow(QMainWindow):
 
     def _createCentralWidget(self):
         self.stack = QStackedWidget()
-        # instantiate views
-        self.chatView = ChatView()
+        # Pass the openDataset method to ChatView
+        self.chatView = ChatView(open_dataset_callback=self.openDataset)
         self.helpView = HelpView()
 
         # add to stack
