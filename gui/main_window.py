@@ -4,7 +4,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from gui.views.plot_view import PlotView
 from gui.views.chat_view import ChatView
 from gui.views.help_view import HelpView
 from core.data_loader import load_dataset
@@ -31,7 +30,7 @@ class MainWindow(QMainWindow):
         # Help menu
         helpMenu = menuBar.addMenu("Help")
         openHelpAction = QAction("Open Help", self)
-        openHelpAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        openHelpAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
         helpMenu.addAction(openHelpAction)
 
     def _createToolBar(self):
@@ -48,16 +47,12 @@ class MainWindow(QMainWindow):
         toolBar.addSeparator()
         
         # Add view switching actions
-        plotAction = QAction("Plots", self)
-        plotAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
-        toolBar.addAction(plotAction)
-        
-        chatAction = QAction("Chat", self)
-        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
+        chatAction = QAction("Chat + Plots", self)
+        chatAction.triggered.connect(lambda: self.stack.setCurrentIndex(0))
         toolBar.addAction(chatAction)
 
         helpAction = QAction("Help", self)
-        helpAction.triggered.connect(lambda: self.stack.setCurrentIndex(2))
+        helpAction.triggered.connect(lambda: self.stack.setCurrentIndex(1))
         toolBar.addAction(helpAction)
 
     def _createStatusBar(self):
@@ -67,19 +62,17 @@ class MainWindow(QMainWindow):
     def _createCentralWidget(self):
         self.stack = QStackedWidget()
         # instantiate views
-        self.plotView = PlotView()
-        self.chatView = ChatView(plot_view=self.plotView)
+        self.chatView = ChatView()
         self.helpView = HelpView()
 
         # add to stack
-        self.stack.addWidget(self.plotView)
         self.stack.addWidget(self.chatView)
         self.stack.addWidget(self.helpView)
 
         self.setCentralWidget(self.stack)
         
-        # Set chat view as the default first screen
-        self.stack.setCurrentIndex(1)  # Chat view is at index 1
+        # Set chat view as the default first screen (plots are now integrated into chat)
+        self.stack.setCurrentIndex(0)  # Chat view is now at index 0
 
 
 
@@ -90,9 +83,8 @@ class MainWindow(QMainWindow):
         if fileName:
             df = load_dataset(fileName)
             # distribute to views
-            self.plotView.set_dataframe(df)
             self.chatView.set_dataframe(df)
 
     def showHelpDialog(self):
         # Kept for backward compatibility; open full Help view instead
-        self.stack.setCurrentIndex(2)
+        self.stack.setCurrentIndex(1)

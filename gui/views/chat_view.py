@@ -1,14 +1,16 @@
 import asyncio
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPushButton, QLabel
-from PySide6.QtGui import QFont, QTextCursor
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QPushButton, QLabel, 
+                               QHBoxLayout, QScrollArea, QFrame, QSizePolicy)
+from PySide6.QtGui import QTextCursor, QPixmap, QFont
+from PySide6.QtCore import Qt, QEvent, QSize
 from datetime import datetime
 import re
 from core.transformers_backend import Chatbot
-from core.ml_plotter import (get_plotting_engine, prepare_example_plot, prepare_boxplot_accelerometer,
-                            prepare_temperature_histogram, prepare_correlation_matrix,
-                            prepare_time_series_analysis, prepare_frequency_domain_plot,
-                            prepare_scatter_plot_features)
+from core.ml_plotter import get_plotting_engine, prepare_example_plot, prepare_boxplot_accelerometer, \
+                           prepare_temperature_histogram, prepare_correlation_matrix, \
+                           prepare_time_series_analysis, prepare_frequency_domain_plot, \
+                           prepare_scatter_plot_features
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 class ChatView(QWidget):
     def __init__(self, parent=None, plot_view=None):
@@ -71,35 +73,43 @@ class ChatView(QWidget):
         
         # Title
         title = QLabel("AI Chat Assistant")
-        title_font = QFont()
-        title_font.setPointSize(16)
-        title_font.setBold(True)
-        title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(title)
         
-        # Chat display area
-        self.chat_display = QTextEdit()
-        self.chat_display.setReadOnly(True)
-        chat_font = QFont()
-        chat_font.setPointSize(12)
-        self.chat_display.setFont(chat_font)
-        self.chat_display.setMinimumHeight(300)
-        self.layout.addWidget(self.chat_display)
+        # Create scroll area for chat content
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # Chat content widget
+        self.chat_content = QWidget()
+        self.chat_layout = QVBoxLayout(self.chat_content)
+        self.chat_layout.addStretch()  # Push content to top
+        
+        self.scroll_area.setWidget(self.chat_content)
+        self.layout.addWidget(self.scroll_area)
         
         # Input area
+        input_layout = QHBoxLayout()
+        
         self.input_field = QTextEdit()
         self.input_field.setMaximumHeight(100)
+        
+        # Set input font to match chat message font size
         input_font = QFont()
         input_font.setPointSize(12)
         self.input_field.setFont(input_font)
+        
         self.input_field.setPlaceholderText("Type your message here...")
-        self.layout.addWidget(self.input_field)
+        input_layout.addWidget(self.input_field)
         
         # Send button
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self._send_message)
-        self.layout.addWidget(self.send_button)
+        input_layout.addWidget(self.send_button)
+        
+        self.layout.addLayout(input_layout)
         
         # Install event filter for Enter key handling
         self.input_field.installEventFilter(self)
@@ -115,21 +125,45 @@ class ChatView(QWidget):
                 return True
         return super().eventFilter(obj, event)
 
-    def _append_message(self, sender: str, message: str, alignment=Qt.AlignRight):
+    def _append_message(self, sender: str, message: str, alignment=Qt.AlignLeft, plot_fig=None):
         """Append a message to the chat display"""
-        cursor = self.chat_display.textCursor()
-        cursor.movePosition(QTextCursor.End)
+        # Create message container
+        message_container = QWidget()
+        message_layout = QVBoxLayout(message_container)
         
         # Format the message with proper timestamp
         timestamp = datetime.now().strftime("%H:%M")
-        formatted_message = f"[{timestamp}] {sender}: {message}\n\n"
+        message_text = f"[{timestamp}] {sender}: {message}"
         
-        # Insert the message
-        cursor.insertText(formatted_message)
+        # Create message label
+        message_label = QLabel(message_text)
+        message_label.setWordWrap(True)
+        message_label.setAlignment(alignment)
+        
+        # Set chat font
+        chat_font = QFont()
+        chat_font.setPointSize(12)
+        message_label.setFont(chat_font)
+        
+        message_layout.addWidget(message_label)
+        
+        # Add plot if provided
+        if plot_fig:
+            # Create a canvas for the plot
+            canvas = FigureCanvas(plot_fig)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            canvas.setMinimumSize(400, 300)
+            message_layout.addWidget(canvas)
+            # Draw the plot
+            canvas.draw()
+        
+        # Add message to chat layout (before the stretch)
+        self.chat_layout.insertWidget(self.chat_layout.count() - 1, message_container)
         
         # Scroll to bottom
-        self.chat_display.setTextCursor(cursor)
-        self.chat_display.ensureCursorVisible()
+        self.scroll_area.verticalScrollBar().setValue(
+            self.scroll_area.verticalScrollBar().maximum()
+        )
 
     def _send_message(self):
         """Send the current message"""
@@ -152,11 +186,11 @@ class ChatView(QWidget):
             # Get AI response using the correct method
             ai_response = self.chatbot.generate(user_message)
             
-            # Display AI response
-            self._append_message("AI Assistant", ai_response, Qt.AlignLeft)
+            # Check for plot triggers first
+            plot_fig = self._check_plot_triggers(ai_response, user_message)
             
-            # Check for plot triggers
-            self._check_plot_triggers(ai_response, user_message)
+            # Display AI response with plot if available
+            self._append_message("AI Assistant", ai_response, Qt.AlignLeft, plot_fig)
             
         except Exception as e:
             error_msg = f"Error getting AI response: {str(e)}"
@@ -170,18 +204,16 @@ class ChatView(QWidget):
         # Normalize user text for strict allowlist matching
         normalized_user = self._normalize_text(user_lower)
         
-        # No general triggers; only explicit allowlisted phrases will trigger plots
-        
         # Strict allowlist: specific plot functions
         if normalized_user in self.allowed_plot_requests_specific:
             plot_type = self.allowed_plot_requests_specific[normalized_user]
-            self.trigger_specific_plot(plot_type)
-            return
+            return self.trigger_specific_plot(plot_type)
 
         # Strict allowlist: engine-handled requests
         if normalized_user in self.allowed_plot_requests_engine:
-            self.trigger_natural_plot_request(user_message)
-            return
+            return self.trigger_natural_plot_request(user_message)
+        
+        return None
 
     def _detect_natural_plot_request(self, user_message: str, ai_response: str) -> str:
         """Detect natural language plot requests"""
@@ -253,43 +285,24 @@ class ChatView(QWidget):
 
     def trigger_plot_display(self):
         """
-        Generate default plot and display it in the plot view
+        Generate default plot and display it in the chat
         """
         try:
             fig = prepare_example_plot()
-            if self.plot_view:
-                self.plot_view.show_plot(fig)
-                self._append_message("System", "Generated plot based on your request. Check the Plot section.", Qt.AlignLeft)
-            else:
-                main_window = self.window()
-                if hasattr(main_window, 'plotView'):
-                    main_window.plotView.show_plot(fig)
-                    main_window.stack.setCurrentIndex(3)
-                    self._append_message("System", "Generated plot based on your request. Check the Plot section.", Qt.AlignLeft)
-                else:
-                    self._append_message("System", "Error: Plot view not available", Qt.AlignLeft)
+            return fig
         except Exception as e:
             self._append_message("System", f"Error displaying plot: {str(e)}", Qt.AlignLeft)
+            return None
 
     def trigger_natural_plot_request(self, request: str):
         """Handle natural language plot requests using the plotting engine"""
         try:
             # Use the plotting engine to handle the request
             fig = self.plotting_engine.handle_plot_request(request)
-            
-            if self.plot_view:
-                self.plot_view.show_plot(fig)
-                self._append_message("System", f"Generated plot based on your request", Qt.AlignLeft)
-            else:
-                main_window = self.window()
-                if hasattr(main_window, 'plotView'):
-                    main_window.plotView.show_plot(fig)
-                    main_window.stack.setCurrentIndex(3)
-                    self._append_message("System", f"Generated plot based on your ", Qt.AlignLeft)
-                else:
-                    self._append_message("System", "Error: Plot view not available", Qt.AlignLeft)
+            return fig
         except Exception as e:
             self._append_message("System", f"Error generating plot: {str(e)}", Qt.AlignLeft)
+            return None
 
     def trigger_specific_plot(self, plot_type: str):
         """
@@ -298,29 +311,11 @@ class ChatView(QWidget):
         try:
             plot_function = self.plot_mapping.get(plot_type, prepare_example_plot)
             fig = plot_function()
-            if self.plot_view:
-                self.plot_view.show_plot(fig)
-                plot_names = {
-                    'boxplot': 'Accelerometer comparison',
-                    'histogram': 'Temperature distribution',
-                    'correlation': 'Feature correlation matrix',
-                    'time series': 'Time series analysis',
-                    'frequency': 'Frequency domain analysis',
-                    'scatter': 'Feature relationships'
-                }
-                plot_name = plot_names.get(plot_type, 'Data analysis')
-                self._append_message("System", f"Generated {plot_name} plot. Check the Plot section.", Qt.AlignLeft)
-            else:
-                main_window = self.window()
-                if hasattr(main_window, 'plotView'):
-                    main_window.plotView.show_plot(fig)
-                    main_window.stack.setCurrentIndex(3)
-                    self._append_message("System", f"Generated specific plot. Check the Plot section.", Qt.AlignLeft)
-                else:
-                    self._append_message("System", "Error: Plot view not available", Qt.AlignLeft)
+            return fig
         except Exception as e:
             self._append_message("System", f"Error displaying {plot_type} plot: {str(e)}", Qt.AlignLeft)
+            return None
 
     def show_sales_plot(self):
         """Alias for trigger_plot_display for backward compatibility"""
-        self.trigger_plot_display()
+        return self.trigger_plot_display()
