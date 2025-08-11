@@ -94,14 +94,6 @@ class ChatView(QWidget):
         # Input area
         input_layout = QHBoxLayout()
 
-        # Add dataset button on the left
-        if self.open_dataset_callback:
-            self.dataset_button = QPushButton("+")
-            self.dataset_button.setToolTip("Open Dataset")
-            self.dataset_button.setMaximumWidth(40)
-            self.dataset_button.clicked.connect(self.open_dataset_callback)
-            input_layout.addWidget(self.dataset_button)
-
         self.input_field = QTextEdit()
         self.input_field.setMaximumHeight(100)
 
@@ -113,10 +105,23 @@ class ChatView(QWidget):
         self.input_field.setPlaceholderText("Type your message here...")
         input_layout.addWidget(self.input_field)
 
+        # Right side button layout (vertical)
+        button_layout = QVBoxLayout()
+        
         # Send button
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self._send_message)
-        input_layout.addWidget(self.send_button)
+        button_layout.addWidget(self.send_button)
+
+        # Add dataset button under send button
+        if self.open_dataset_callback:
+            self.dataset_button = QPushButton("+")
+            self.dataset_button.setToolTip("Open Dataset")
+            self.dataset_button.setMaximumWidth(40)
+            self.dataset_button.clicked.connect(self.open_dataset_callback)
+            button_layout.addWidget(self.dataset_button)
+        
+        input_layout.addLayout(button_layout)
 
         self.layout.addLayout(input_layout)
         
@@ -124,7 +129,7 @@ class ChatView(QWidget):
         self.input_field.installEventFilter(self)
         
         # Welcome message
-        self._append_message("AI Assistant", "Hello! I'm your AI assistant. I can help you analyze sensor data and create visualizations. Try asking me to show plots or analyze specific sensors!", Qt.AlignLeft)
+        self._append_message("AI Assistant", "Hello! I'm your AI assistant. I can help you analyze sensor data and create visualizations.", Qt.AlignLeft)
 
     def eventFilter(self, obj, event):
         """Handle Enter key press in input field"""
@@ -195,11 +200,18 @@ class ChatView(QWidget):
             # Get AI response using the correct method
             ai_response = self.chatbot.generate(user_message)
             
-            # Check for plot triggers first
-            plot_fig = self._check_plot_triggers(ai_response, user_message)
+            # Check for new trigger markers first (e.g., [TRIGGER_PLOT:histogram])
+            plot_fig = self._check_trigger_markers(ai_response)
+            
+            # If no trigger markers found, check old plot triggers for backward compatibility
+            if not plot_fig:
+                plot_fig = self._check_plot_triggers(ai_response, user_message)
+            
+            # Clean the response by removing trigger markers before displaying
+            clean_response = self._clean_response_from_triggers(ai_response)
             
             # Display AI response with plot if available
-            self._append_message("AI Assistant", ai_response, Qt.AlignLeft, plot_fig)
+            self._append_message("AI Assistant", clean_response, Qt.AlignLeft, plot_fig)
             
         except Exception as e:
             error_msg = f"Error getting AI response: {str(e)}"
@@ -328,3 +340,93 @@ class ChatView(QWidget):
     def show_sales_plot(self):
         """Alias for trigger_plot_display for backward compatibility"""
         return self.trigger_plot_display()
+
+    def _check_trigger_markers(self, ai_response: str):
+        """Check AI response for new trigger markers like [TRIGGER_PLOT:histogram]"""
+        # Look for trigger markers in the response
+        trigger_pattern = r'\[TRIGGER_PLOT:(\w+)\]'
+        analysis_pattern = r'\[TRIGGER_ANALYSIS:(\w+)\]'
+        
+        # Check for plot triggers
+        plot_match = re.search(trigger_pattern, ai_response)
+        if plot_match:
+            plot_type = plot_match.group(1)
+            return self._handle_plot_trigger(plot_type)
+        
+        # Check for analysis triggers
+        analysis_match = re.search(analysis_pattern, ai_response)
+        if analysis_match:
+            analysis_type = analysis_match.group(1)
+            return self._handle_analysis_trigger(analysis_type)
+        
+        return None
+
+    def _handle_plot_trigger(self, plot_type: str):
+        """Handle plot triggers based on plot type"""
+        try:
+            if plot_type in ['histogram', 'boxplot', 'scatter', 'correlation', 'timeseries', 'line', 'bar', 'pie']:
+                # Basic plot types - use existing specific plot functions
+                if plot_type == 'histogram':
+                    return self.trigger_specific_plot('histogram')
+                elif plot_type == 'boxplot':
+                    return self.trigger_specific_plot('boxplot')
+                elif plot_type == 'correlation':
+                    return self.trigger_specific_plot('correlation')
+                elif plot_type == 'timeseries':
+                    return self.trigger_specific_plot('time series')
+                elif plot_type == 'scatter':
+                    return self.trigger_specific_plot('scatter')
+                else:
+                    # For other plot types, use the plotting engine
+                    return self.trigger_natural_plot_request(f"create {plot_type}")
+            
+            elif plot_type in ['temperature_analysis', 'pressure_analysis', 'humidity_analysis', 'motion_analysis', 'magnetic_analysis']:
+                # Sensor-specific analysis - use plotting engine
+                sensor_map = {
+                    'temperature_analysis': 'analyze temperature sensors',
+                    'pressure_analysis': 'analyze pressure readings',
+                    'humidity_analysis': 'analyze humidity distribution',
+                    'motion_analysis': 'analyze accelerometer data',
+                    'magnetic_analysis': 'analyze magnetometer data'
+                }
+                return self.trigger_natural_plot_request(sensor_map.get(plot_type, f"analyze {plot_type}"))
+            
+            elif plot_type == 'general_visualization':
+                # General visualization request
+                return self.trigger_natural_plot_request("create a general visualization")
+            
+            else:
+                # Unknown plot type - use plotting engine
+                return self.trigger_natural_plot_request(f"create {plot_type}")
+                
+        except Exception as e:
+            self._append_message("System", f"Error handling plot trigger '{plot_type}': {str(e)}", Qt.AlignLeft)
+            return None
+
+    def _handle_analysis_trigger(self, analysis_type: str):
+        """Handle analysis triggers"""
+        try:
+            if analysis_type == 'statistical_analysis':
+                return self.trigger_natural_plot_request("perform statistical analysis")
+            elif analysis_type == 'comparison_analysis':
+                return self.trigger_natural_plot_request("create comparison analysis")
+            elif analysis_type == 'trend_analysis':
+                return self.trigger_natural_plot_request("analyze trends and patterns")
+            elif analysis_type == 'correlation_analysis':
+                return self.trigger_natural_plot_request("analyze correlations")
+            else:
+                return self.trigger_natural_plot_request(f"perform {analysis_type}")
+        except Exception as e:
+            self._append_message("System", f"Error handling analysis trigger '{analysis_type}': {str(e)}", Qt.AlignLeft)
+            return None
+
+    def _clean_response_from_triggers(self, ai_response: str) -> str:
+        """Remove trigger markers from AI response before displaying to user"""
+        # Remove all trigger markers
+        clean_response = re.sub(r'\[TRIGGER_PLOT:\w+\]', '', ai_response)
+        clean_response = re.sub(r'\[TRIGGER_ANALYSIS:\w+\]', '', clean_response)
+        
+        # Clean up any extra whitespace
+        clean_response = re.sub(r'\s+', ' ', clean_response).strip()
+        
+        return clean_response
